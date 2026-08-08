@@ -1,8 +1,11 @@
 <resources>
     <style name="Theme.Minska" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">#126B4A</item>
-        <item name="colorPrimaryVariant">#0C5037</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimary">@color/green</item>
+        <item name="colorPrimaryVariant">@color/green_dark</item>
+        <item name="colorOnPrimary">#08131D</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:fontFamily">sans</item>
     </style>
 </resources>
