@@ -62,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         setContentView(R.layout.activity_main);
+        getWindow().getDecorView().setSystemUiVisibility(5894);
         content=findViewById(R.id.content);
         prefs=getSharedPreferences("minska_prefs", MODE_PRIVATE);
         fused=LocationServices.getFusedLocationProviderClient(this);
