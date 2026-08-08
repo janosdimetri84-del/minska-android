@@ -33,7 +33,7 @@ public class GeofenceReceiver extends BroadcastReceiver {
         NotificationCompat.Builder b=new NotificationCompat.Builder(context,"minska")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle("MINSKA")
-                .setContentText("Du är nära din sparade butik och har redan nått minst ett av dagens mål.")
+                .setContentText("Du är nära en butik och har redan nått minst ett av dagens mål. Titta på Idag innan du handlar.")
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_HIGH);
         NotificationManagerCompat.from(context).notify(4001,b.build());

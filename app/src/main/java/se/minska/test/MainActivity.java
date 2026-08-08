@@ -30,6 +30,11 @@ import org.json.JSONObject;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.net.URLEncoder;
+import java.net.URL;
+import java.net.HttpURLConnection;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -364,12 +369,16 @@ public class MainActivity extends AppCompatActivity {
         perms.setOnClickListener(v->requestPermissionsForGps());
         content.addView(perms);
 
-        Button save=btn("2. Spara min nuvarande plats som butik");
+        Button autoStores=btn("2. Hitta butiker automatiskt nära mig");
+        autoStores.setOnClickListener(v->findAndRegisterNearbyStores());
+        content.addView(autoStores);
+
+        Button save=btn("3. Spara min nuvarande plats som butik");
         save.setOnClickListener(v->saveCurrentPlaceAsGeofence());
         content.addView(save);
 
         if(Build.VERSION.SDK_INT>=29){
-            Button bg=btn("3. Tillåt plats i bakgrunden i Android-inställningar");
+            Button bg=btn("4. Tillåt plats i bakgrunden i Android-inställningar");
             bg.setOnClickListener(v->{
                 Intent i=new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:"+getPackageName()));
                 startActivity(i);
@@ -436,6 +445,112 @@ public class MainActivity extends AppCompatActivity {
             geofencing.addGeofences(req,geofencePI())
                 .addOnSuccessListener(v->{prefs.edit().putBoolean("geofence_saved",true).apply();toast("Platsen sparad som butik (150 m).");})
                 .addOnFailureListener(e->toast("Kunde inte aktivera platsregel. Kontrollera bakgrundsplats."))
+        );
+    }
+
+
+    private void findAndRegisterNearbyStores(){
+        if(ActivityCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED){
+            toast("Ge platsbehörighet först");
+            requestPermissionsForGps();
+            return;
+        }
+        toast("Söker efter butiker nära dig…");
+        fused.getLastLocation().addOnSuccessListener(loc->{
+            if(loc==null){
+                toast("Kunde inte läsa GPS-position. Slå på plats och försök igen.");
+                return;
+            }
+            new Thread(()->queryNearbyStoresFromOsm(loc.getLatitude(),loc.getLongitude())).start();
+        }).addOnFailureListener(e->toast("GPS-fel: "+e.getMessage()));
+    }
+
+    private void queryNearbyStoresFromOsm(double lat,double lon){
+        try{
+            String q="[out:json][timeout:20];(" +
+                    "node[shop=supermarket](around:1200,"+lat+","+lon+");" +
+                    "node[shop=convenience](around:1200,"+lat+","+lon+");" +
+                    "node[shop=kiosk](around:1200,"+lat+","+lon+");" +
+                    "node[shop=mall](around:1200,"+lat+","+lon+");" +
+                    "way[shop=supermarket](around:1200,"+lat+","+lon+");" +
+                    "way[shop=convenience](around:1200,"+lat+","+lon+");" +
+                    ");out center 40;";
+            String endpoint="https://overpass-api.de/api/interpreter?data="+URLEncoder.encode(q,"UTF-8");
+            HttpURLConnection c=(HttpURLConnection)new URL(endpoint).openConnection();
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(20000);
+            c.setRequestProperty("User-Agent","MINSKA-Android/0.5");
+            BufferedReader br=new BufferedReader(new InputStreamReader(c.getInputStream()));
+            StringBuilder body=new StringBuilder();
+            String line;
+            while((line=br.readLine())!=null) body.append(line);
+            br.close();
+
+            JSONObject root=new JSONObject(body.toString());
+            JSONArray elements=root.getJSONArray("elements");
+            ArrayList<Geofence> fences=new ArrayList<>();
+            JSONArray saved=new JSONArray();
+
+            int max=Math.min(elements.length(),40);
+            for(int i=0;i<max;i++){
+                JSONObject e=elements.getJSONObject(i);
+                double slat, slon;
+                if(e.has("lat")){
+                    slat=e.getDouble("lat");
+                    slon=e.getDouble("lon");
+                }else if(e.has("center")){
+                    JSONObject center=e.getJSONObject("center");
+                    slat=center.getDouble("lat");
+                    slon=center.getDouble("lon");
+                }else{
+                    continue;
+                }
+
+                String id="osm_"+e.optString("type","x")+"_"+e.optLong("id",i);
+                String name="Butik";
+                if(e.has("tags")) name=e.getJSONObject("tags").optString("name","Butik");
+
+                fences.add(new Geofence.Builder()
+                        .setRequestId(id)
+                        .setCircularRegion(slat,slon,120)
+                        .setExpirationDuration(24L*60L*60L*1000L)
+                        .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
+                        .build());
+
+                JSONObject store=new JSONObject();
+                store.put("id",id);
+                store.put("name",name);
+                store.put("lat",slat);
+                store.put("lon",slon);
+                saved.put(store);
+            }
+
+            prefs.edit().putString("auto_stores_json",saved.toString()).apply();
+            runOnUiThread(()->registerAutoStoreGeofences(fences));
+        }catch(Exception e){
+            runOnUiThread(()->toast("Kunde inte hämta butiker just nu. Kontrollera internet och försök igen."));
+        }
+    }
+
+    private void registerAutoStoreGeofences(ArrayList<Geofence> fences){
+        if(fences.isEmpty()){
+            toast("Inga lämpliga butiker hittades inom cirka 1,2 km.");
+            return;
+        }
+        if(ActivityCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) return;
+
+        GeofencingRequest req=new GeofencingRequest.Builder()
+                .setInitialTrigger(0)
+                .addGeofences(fences)
+                .build();
+
+        geofencing.removeGeofences(geofencePI()).addOnCompleteListener(x->
+            geofencing.addGeofences(req,geofencePI())
+                .addOnSuccessListener(v->{
+                    prefs.edit().putInt("auto_store_count",fences.size()).apply();
+                    toast(fences.size()+" butiker hittades och aktiverades för påminnelser.");
+                })
+                .addOnFailureListener(e->toast("Butiker hittades, men Android kunde inte aktivera geofences. Kontrollera bakgrundsplats."))
         );
     }
 
