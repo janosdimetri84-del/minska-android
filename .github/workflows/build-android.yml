@@ -1,3 +1,6 @@
+permissions:
+  contents: write
+
 name: Build MINSKA Android APK
 
 on:
@@ -31,3 +34,15 @@ jobs:
         with:
           name: MINSKA-Android-0.5
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk MINSKA-v0.5.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.5
+          name: MINSKA 0.5
+          files: MINSKA-v0.5.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
